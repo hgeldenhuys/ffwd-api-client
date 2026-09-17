@@ -1,0 +1,90 @@
+{
+  "name": "@ffwd/api-client-react",
+  "version": "0.1.0",
+  "description": "The ffwd API client UI as an embeddable React 19 component: three-pane Postman-collection client with server-held secrets. Ships its own scoped stylesheet; the host sizes it.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./token-input": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./variables-table": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./sidebar": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./request-editor": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./response-pane": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir dist --format esm --target browser --packages external --splitting --sourcemap=none --production && tsc --emitDeclarationOnly --outDir dist && postcss src/styles.css -o dist/styles.css"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-dom": ">=19"
+  },
+  "dependencies": {
+    "@codemirror/lang-json": "^6.0.2",
+    "@radix-ui/react-checkbox": "^1.1.4",
+    "@radix-ui/react-dialog": "^1.1.6",
+    "@radix-ui/react-label": "^2.1.1",
+    "@radix-ui/react-popover": "^1.1.6",
+    "@radix-ui/react-select": "^2.1.6",
+    "@radix-ui/react-slot": "^1.1.2",
+    "@radix-ui/react-tabs": "^1.1.3",
+    "@uiw/react-codemirror": "^4.23.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.474.0",
+    "radix-ui": "^1.6.7",
+    "react-resizable-panels": "^4",
+    "sonner": "^1.7.2",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "postcss": "^8.4.49",
+    "postcss-cli": "^11.0.0",
+    "postcss-prefix-selector": "^2.1.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.3"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hgeldenhuys/ffwd-api-client",
+    "directory": "packages/api-client-react"
+  },
+  "sideEffects": [
+    "*.css",
+    "./src/**"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/hgeldenhuys/ffwd-api-client/tree/main/packages/api-client-react#readme",
+  "bugs": "https://github.com/hgeldenhuys/ffwd-api-client/issues"
+}

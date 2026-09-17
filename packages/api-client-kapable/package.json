@@ -1,0 +1,43 @@
+{
+  "name": "@ffwd/api-client-kapable",
+  "version": "0.1.0",
+  "description": "Kapable-platform adapter for the ffwd API client: a durable write-through Store for the platform's data service and Sign in with Kapable SSO auth. Depends on @ffwd/api-client-server.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir dist --format esm --target node --external @ffwd/api-client-server && tsc --emitDeclarationOnly --outDir dist"
+  },
+  "dependencies": {
+    "@ffwd/api-client-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.1",
+    "typescript": "^5.7.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hgeldenhuys/ffwd-api-client",
+    "directory": "packages/api-client-kapable"
+  },
+  "homepage": "https://github.com/hgeldenhuys/ffwd-api-client#readme",
+  "bugs": "https://github.com/hgeldenhuys/ffwd-api-client/issues",
+  "engines": {
+    "bun": ">=1.3"
+  }
+}

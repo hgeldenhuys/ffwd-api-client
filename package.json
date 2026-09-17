@@ -1,0 +1,46 @@
+{
+  "name": "ffwd-api-client",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build:packages": "for d in packages/*/; do bun run --cwd \"$d\" build; done",
+    "build": "bun run build:packages && react-router build",
+    "dev": "react-router dev",
+    "start": "bun run server.ts",
+    "test": "bun run build:packages && bun test",
+    "typecheck": "bun run build:packages && react-router typegen && tsc --project ."
+  },
+  "dependencies": {
+    "@ffwd/api-client-react": "workspace:*",
+    "@ffwd/api-client-server": "workspace:*",
+    "postman-collection": "5.3.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^7.1.5",
+    "sonner": "^1.7.2"
+  },
+  "devDependencies": {
+    "@react-router/dev": "^7.1.5",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/bun": "^1.2.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "happy-dom": "^20.14.5",
+    "hono": "^4.6.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vite-tsconfig-paths": "^6.1.1"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hgeldenhuys/ffwd-api-client"
+  },
+  "homepage": "https://github.com/hgeldenhuys/ffwd-api-client#readme",
+  "bugs": "https://github.com/hgeldenhuys/ffwd-api-client/issues"
+}

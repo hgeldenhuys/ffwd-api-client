@@ -1,0 +1,11 @@
+node_modules
+build
+dist
+data
+*.sqlite*
+.env
+.react-router
+examples/*/dist
+examples/*/data
+docs/
+.DS_Store

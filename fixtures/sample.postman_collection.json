@@ -1,0 +1,194 @@
+{
+  "info": {
+    "name": "Sample",
+    "_postman_id": "f1e2d3c4-b5a6-4789-90ab-cdef01234567",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Fixture collection for build 1 tests."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Auth'd",
+      "item": [
+        {
+          "name": "Get me",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/_echo?trace={{traceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "_echo"
+              ],
+              "query": [
+                {
+                  "key": "trace",
+                  "value": "{{traceId}}",
+                  "disabled": false
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "x-echo-key",
+                "value": "test-access-key-0123456789",
+                "type": "text"
+              }
+            ],
+            "description": "Inherits the collection bearer auth."
+          }
+        },
+        {
+          "name": "Post raw",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/_echo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "_echo"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-echo-key",
+                "value": "test-access-key-0123456789",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"hello\":\"{{name}}\"}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Misc",
+      "auth": {
+        "type": "apikey",
+        "apikey": [
+          {
+            "key": "in",
+            "value": "header",
+            "type": "string"
+          },
+          {
+            "key": "key",
+            "value": "X-API-Key",
+            "type": "string"
+          },
+          {
+            "key": "value",
+            "value": "literal-folder-apikey-value-42",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Urlencoded login",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/_echo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "_echo"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-echo-key",
+                "value": "test-access-key-0123456789",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "user",
+                  "value": "herman",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Literal header",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/_echo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "_echo"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-echo-key",
+                "value": "test-access-key-0123456789",
+                "type": "text"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "literal-header-value-xyz",
+                "type": "text"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "traceId",
+      "value": "tr-000123",
+      "type": "string"
+    },
+    {
+      "key": "name",
+      "value": "world",
+      "type": "string"
+    }
+  ]
+}
