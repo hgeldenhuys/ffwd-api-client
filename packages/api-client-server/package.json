@@ -1,6 +1,6 @@
 {
   "name": "@ffwd/api-client-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Server core of the ffwd API client as an embeddable package: a fetch-function handler with server-held secret variables, Postman v2.1 import/export, and an SSRF proxy policy. No React, no DOM.",
   "type": "module",
   "main": "./dist/index.js",
@@ -8,8 +8,10 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
@@ -17,10 +19,11 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/index.ts --outdir dist --format esm --target node --external postman-collection && tsc --emitDeclarationOnly --outDir dist"
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir dist --format esm --target node --external postman-collection --external quickjs-emscripten && bun build ./src/scripts/worker.ts --outdir dist --format esm --target node --external postman-collection --external quickjs-emscripten && tsc --emitDeclarationOnly --outDir dist"
   },
   "dependencies": {
-    "postman-collection": "5.3.1"
+    "postman-collection": "5.3.1",
+    "quickjs-emscripten": "^0.32.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.1",

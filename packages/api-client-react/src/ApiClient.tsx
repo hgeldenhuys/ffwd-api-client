@@ -3,6 +3,7 @@ import { toast, Toaster } from "sonner";
 import {
   ChevronDown,
   ChevronRight,
+  Code2,
   Download,
   FileJson,
   Folder,
@@ -49,6 +50,7 @@ import { TokenInput } from "./components/token-input";
 import { VariablesTable, type VarRow } from "./components/variables-table";
 import {
   blankCollection,
+  type ScriptsReport,
   blankRequest,
   formatBytes,
   METHODS,
@@ -103,6 +105,7 @@ function CodeMirrorJson(props: {
   onChange?: (v: string) => void;
   editable?: boolean;
   height?: string;
+  language?: "json" | "javascript";
 }) {
   return (
     <Suspense fallback={<EditorFallback value={props.value} onChange={props.onChange} editable={props.editable} />}>
@@ -243,12 +246,12 @@ export interface ApiClientProps {
 }
 
 type InternalSidebarTab = "collections" | "environments" | "history";
-type InternalEditorTab = "params" | "headers" | "body" | "auth" | "variables";
+type InternalEditorTab = "params" | "headers" | "body" | "auth" | "variables" | "prerequest" | "tests";
 
 const toUrlSidebar = (t: InternalSidebarTab): SidebarTab => (t === "environments" ? "envs" : t);
 const fromUrlSidebar = (t: SidebarTab): InternalSidebarTab => (t === "envs" ? "environments" : t);
 const toUrlEditorTab = (t: InternalEditorTab): EditorTab => (t === "variables" ? "vars" : t);
-const fromUrlEditorTab = (t: EditorTab): InternalEditorTab => (t === "vars" ? "variables" : t);
+const fromUrlEditorTab = (t: EditorTab): InternalEditorTab => (t === "vars" ? "variables" : t === "prerequest" ? "prerequest" : t === "tests" ? "tests" : t);
 
 export function ApiClient({ apiBase = "/api/ffwd", className, onUnauthorized, urlState }: ApiClientProps) {
   const [authDenied, setAuthDenied] = useState<UnauthorizedInfo | null>(null);
@@ -272,6 +275,8 @@ export function ApiClient({ apiBase = "/api/ffwd", className, onUnauthorized, ur
   const [response, setResponse] = useState<SendResult | null>(null);
   const [sending, setSending] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportTarget, setExportTarget] = useState<{ kind: "collection" | "environment"; id: string } | null>(null);
   const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null);
   const [renameReq, setRenameReq] = useState<RenameRequest | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -567,8 +572,28 @@ export function ApiClient({ apiBase = "/api/ffwd", className, onUnauthorized, ur
         toast.error(data?.error?.message ?? `The send failed with status ${res.status}.`);
         return;
       }
-      setResponse(data as SendResult);
-      for (const w of (data as SendResult).warnings ?? []) toast.warning(w);
+      const result = data as SendResult;
+      setResponse(result);
+      for (const w of result.warnings ?? []) toast.warning(w);
+      const scripts = result.scripts;
+      if (scripts) {
+        const total = scripts.tests.results.length;
+        if (total > 0) {
+          const passed = scripts.tests.results.filter((t) => t.passed).length;
+          if (passed === total) toast.success(`Tests: ${passed} of ${total} passed`);
+          else toast.error(`Tests: ${passed} of ${total} passed`);
+        }
+        const changed = scripts.variablesChanged ?? [];
+        const scopes = new Map<string, string>();
+        for (const c of changed) scopes.set(`${c.scope}:${c.scopeId}`, c.scope);
+        for (const [key, scope] of scopes) {
+          await variablesChanged(scope as "collection" | "environment", key.split(":")[1]);
+        }
+        if (changed.some((c) => !c.persisted)) {
+          const reason = changed.find((c) => !c.persisted)?.reason;
+          toast.info(`Script variable changes were not persisted${reason ? `: ${reason}` : ""}`);
+        }
+      }
       const hist = await api<HistoryMeta[]>("/api/history?limit=200");
       if (hist) setHistoryList(hist);
     } catch (err: any) {
@@ -677,6 +702,25 @@ export function ApiClient({ apiBase = "/api/ffwd", className, onUnauthorized, ur
     }
   }
 
+  // ----- collection trust (scripts) -----
+
+  async function setCollectionTrusted(collectionId: string, trusted: boolean) {
+    const col = collections.find((c) => c.id === collectionId);
+    const json: any = structuredClone((draft?.collectionId === collectionId ? draft.json : col?.json) ?? null);
+    if (!json) return;
+    json.info ??= { name: "Collection" };
+    json.info["x-ffwd-scripts-trusted"] = trusted;
+    const updated = await api<CollectionMeta>(`/api/collections/${collectionId}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: json.info?.name ?? "Collection", json }),
+    });
+    if (!updated) return;
+    setCollections((cols) => cols.map((c) => (c.id === updated.id ? updated : c)));
+    if (draft?.collectionId === collectionId) setDraft({ collectionId, json: updated.json, dirty: draft.dirty });
+    toast.success(trusted ? "Scripts in this collection are now trusted." : "Scripts in this collection are now untrusted.");
+  }
+
   // ----- history reopen -----
 
   async function reopenHistory(id: string) {
@@ -755,6 +799,7 @@ export function ApiClient({ apiBase = "/api/ffwd", className, onUnauthorized, ur
             selectEnvironment={selectEnvironment}
             reopenHistory={reopenHistory}
             openImport={() => setImportOpen(true)}
+            openExport={(kind, id) => setExportTarget({ kind, id })}
             confirm={(title, description) => new Promise<boolean>((resolve) => setConfirmReq({ title, description, resolve }))}
             rename={(initial) => new Promise<string | null>((resolve) => setRenameReq({ initial, resolve }))}
             refresh={refresh}
@@ -864,12 +909,14 @@ export function ApiClient({ apiBase = "/api/ffwd", className, onUnauthorized, ur
                       onSave={saveDraft}
                     />
                   ) : selection?.kind === "collection" && draft ? (
-                    <CollectionVariables
+                    <CollectionView
                       draft={draft}
                       rows={varRowsFor("collection", draft.collectionId)}
                       mutate={mutate}
                       onVariablesChanged={variablesChanged}
                       onSave={saveDraft}
+                      trusted={draft.json.info?.["x-ffwd-scripts-trusted"] === true}
+                      onSetTrusted={setCollectionTrusted}
                     />
                   ) : selection?.kind === "environment" && selection.environmentId ? (
                     <EnvironmentVariables
@@ -896,12 +943,91 @@ export function ApiClient({ apiBase = "/api/ffwd", className, onUnauthorized, ur
       </ResizablePanelGroup>
 
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={refresh} />
+      <ExportDialog
+        open={exportOpen || exportTarget !== null}
+        onOpenChange={(o) => {
+          setExportOpen(o);
+          if (!o) setExportTarget(null);
+        }}
+        target={exportTarget}
+      />
       <AppDialogs
         confirmReq={confirmReq}
         setConfirmReq={setConfirmReq}
         renameReq={renameReq}
         setRenameReq={setRenameReq}
       />
+    </div>
+  );
+}
+
+// ---------- scripts (pre-request / tests) --------------------------------------
+
+export function hasCollectionScripts(json: any): boolean {
+  if (Array.isArray(json?.event) && json.event.length > 0) return true;
+  const walk = (items: any[]): boolean => {
+    for (const item of items ?? []) {
+      if (Array.isArray(item?.event) && item.event.length > 0) return true;
+      if (Array.isArray(item?.item) && walk(item.item)) return true;
+    }
+    return false;
+  };
+  return walk(json?.item ?? []);
+}
+
+export function getScriptExec(node: any, listen: "prerequest" | "test"): string {
+  const ev = (node?.event ?? []).find((e: any) => e?.listen === listen);
+  return Array.isArray(ev?.script?.exec) ? ev!.script!.exec!.join("\n") : "";
+}
+
+function setScriptExec(node: any, listen: "prerequest" | "test", code: string) {
+  node.event ??= [];
+  let ev = node.event.find((e: any) => e?.listen === listen);
+  if (!ev) {
+    ev = { listen, script: { type: "text/javascript", exec: [] } };
+    node.event.push(ev);
+  }
+  ev.script ??= { type: "text/javascript" };
+  ev.script.exec = code.length ? code.split("\n") : [];
+}
+
+const SNIPPETS: { label: string; code: string }[] = [
+  { label: "Status is 200", code: 'pm.test("Status is 200", () => pm.response.to.have.status(200));' },
+  { label: "Response has JSON field", code: 'pm.test("Response has JSON field", () => {\n  pm.expect(pm.response.json()).to.have.property("id");\n});' },
+  { label: "Set variable from response", code: 'pm.collectionVariables.set("id", pm.response.json().id);' },
+  { label: "Store bearer token as secret", code: 'pm.secrets.set("token", pm.response.json().access_token);' },
+  { label: "Add header before send", code: 'pm.request.headers.add({ key: "X-Custom", value: "value" });' },
+];
+
+function ScriptEditor({
+  code,
+  onChange,
+}: {
+  code: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-2 pt-1">
+      <div className="flex items-center justify-between">
+        <p className="text-muted-foreground">
+          Runs on the server at send time. Scripts in an untrusted collection cannot read secret values, persist changes, or change the request origin.
+        </p>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="outline" className="gap-1">
+              <Code2 className="size-3.5" /> Insert snippet
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            {SNIPPETS.map((sn) => (
+              <DropdownMenuItem key={sn.label} onClick={() => onChange(code ? code + "\n\n" + sn.code : sn.code)}>
+                {sn.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <CodeMirrorJson value={code} onChange={onChange} language="javascript" height="260px" />
     </div>
   );
 }
@@ -924,6 +1050,7 @@ export function Sidebar(props: {
   selectEnvironment: (id: string) => void;
   reopenHistory: (id: string) => void;
   openImport: () => void;
+  openExport: (kind: "collection" | "environment", id: string) => void;
   confirm: (title: string, description: string) => Promise<boolean>;
   rename: (initial: string) => Promise<string | null>;
   refresh: () => void;
@@ -934,7 +1061,7 @@ export function Sidebar(props: {
 }) {
   const {
     collections, environments, historyList, tab, setTab, filter, setFilter, selection, draft,
-    mutate, selectRequest, selectCollection, selectEnvironment, reopenHistory, openImport,
+    mutate, selectRequest, selectCollection, selectEnvironment, reopenHistory, openImport, openExport,
     confirm, rename, refresh, clearDraft, clearSelection,
   } = props;
 
@@ -943,6 +1070,9 @@ export function Sidebar(props: {
       <div className="flex items-center gap-1 p-2">
         <Button size="sm" variant="outline" className="gap-1" onClick={openImport}>
           <Upload className="size-3.5" /> Import
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1" onClick={() => openExport("collection", "")}>
+          <Download className="size-3.5" /> Export
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -1021,11 +1151,15 @@ export function Sidebar(props: {
                     <a href={`/api/export/collection/${col.id}`} title="Export as v2.1 JSON" className="opacity-0 group-hover:opacity-100">
                       <Download className="size-3.5 text-muted-foreground" />
                     </a>
+                    {/* Export… entry opens the export dialog; see openExport */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="sm" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100">⋯</Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
+                        <DropdownMenuItem onClick={() => openExport("collection", col.id)}>
+                          <Download className="size-3.5" /> Export…
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={async () => {
                             if (draft?.collectionId !== col.id) {
@@ -1103,19 +1237,28 @@ export function Sidebar(props: {
                 <a href={`/api/export/environment/${env.id}`} title="Export" className="opacity-0 group-hover:opacity-100">
                   <Download className="size-3.5 text-muted-foreground" />
                 </a>
-                <button
-                  className="opacity-0 group-hover:opacity-100"
-                  title="Delete environment"
-                  onClick={async () => {
-                    if (!(await confirm(`Delete environment “${env.name}”?`, "Its variables and its secrets are deleted."))) return;
-                    await api(`/api/environments/${env.id}`, { method: "DELETE" });
-                    if (props.selectedEnvId === env.id) props.setSelectedEnvId("none");
-                    if (selection?.environmentId === env.id) clearSelection();
-                    refresh();
-                  }}
-                >
-                  <Trash2 className="size-3.5 text-destructive" />
-                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100">⋯</Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => openExport("environment", env.id)}>
+                      <Download className="size-3.5" /> Export…
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={async () => {
+                        if (!(await confirm(`Delete environment “${env.name}”?`, "Its variables and its secrets are deleted."))) return;
+                        await api(`/api/environments/${env.id}`, { method: "DELETE" });
+                        if (props.selectedEnvId === env.id) props.setSelectedEnvId("none");
+                        if (selection?.environmentId === env.id) clearSelection();
+                        refresh();
+                      }}
+                    >
+                      <Trash2 className="size-3.5" /> Delete environment
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             ))
           )}
@@ -1335,6 +1478,8 @@ export function RequestEditor(props: {
         <TabsTrigger value="body">Body</TabsTrigger>
         <TabsTrigger value="auth">Auth</TabsTrigger>
         <TabsTrigger value="variables">Variables</TabsTrigger>
+        <TabsTrigger value="prerequest">Pre-request</TabsTrigger>
+        <TabsTrigger value="tests">Tests</TabsTrigger>
       </TabsList>
 
       <TabsContent value="params">
@@ -1412,6 +1557,20 @@ export function RequestEditor(props: {
           scope="collection"
           scopeId={collectionScopeId}
           onChanged={() => onVariablesChanged("collection", collectionScopeId)}
+        />
+      </TabsContent>
+
+      <TabsContent value="prerequest">
+        <ScriptEditor
+          code={getScriptExec(item, "prerequest")}
+          onChange={(v) => editRequest((_r, target) => setScriptExec(target, "prerequest", v))}
+        />
+      </TabsContent>
+
+      <TabsContent value="tests">
+        <ScriptEditor
+          code={getScriptExec(item, "test")}
+          onChange={(v) => editRequest((_r, target) => setScriptExec(target, "test", v))}
         />
       </TabsContent>
     </Tabs>
@@ -1606,7 +1765,8 @@ function AuthEditor({
 // ---------- response pane -------------------------------------------------------
 
 export function ResponsePane({ response, sending }: { response: SendResult | null; sending: boolean }) {
-  const [respTab, setRespTab] = useState<"body" | "headers">("body");
+  const [respTab, setRespTab] = useState<"body" | "headers" | "tests" | "console">("body");
+  const scripts = response?.scripts;
   const pretty = useMemo(() => {
     if (!response?.body) return null;
     try {
@@ -1647,6 +1807,8 @@ export function ResponsePane({ response, sending }: { response: SendResult | nul
           <TabsList className="h-7">
             <TabsTrigger value="body" className="h-7">Body</TabsTrigger>
             <TabsTrigger value="headers" className="h-7">Headers</TabsTrigger>
+            {scripts && <TabsTrigger value="tests" className="h-7">Tests</TabsTrigger>}
+            {scripts && <TabsTrigger value="console" className="h-7">Console</TabsTrigger>}
           </TabsList>
         </Tabs>
       </div>
@@ -1654,7 +1816,16 @@ export function ResponsePane({ response, sending }: { response: SendResult | nul
         <div className="border-b bg-destructive/10 px-3 py-2 text-[13px]">{response.error.message}</div>
       )}
       <div className="flex-1 overflow-auto">
-        {respTab === "headers" ? (
+        {respTab === "tests" && scripts ? (
+          <ScriptTests tests={scripts.tests} />
+        ) : respTab === "console" && scripts ? (
+          <ScriptConsole
+            entries={[
+              ...scripts.prerequest.console.map((line) => ({ phase: "pre-request", line })),
+              ...scripts.tests.console.map((line) => ({ phase: "test", line })),
+            ]}
+          />
+        ) : respTab === "headers" ? (
           <table className="w-full text-[13px]">
             <tbody>
               {Object.entries(response.headers).map(([k, v]) => (
@@ -1681,48 +1852,154 @@ export function ResponsePane({ response, sending }: { response: SendResult | nul
   );
 }
 
+// ---------- script output views (rendered as TEXT, never HTML) -------------------
+
+function ScriptTests({ tests }: { tests: ScriptsReport["tests"] }) {
+  const passed = tests.results.filter((t) => t.passed).length;
+  return (
+    <div className="p-3 text-[13px]">
+      <p className="mb-2 font-semibold">
+        {passed} of {tests.results.length} passed
+      </p>
+      {tests.error && (
+        <p className="mb-2 text-red-600 dark:text-red-400">{tests.error.message}</p>
+      )}
+      {tests.results.length === 0 && !tests.error ? (
+        <p className="text-muted-foreground">No tests ran.</p>
+      ) : (
+        <ul className="space-y-1">
+          {tests.results.map((t, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className={t.passed ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
+                {t.passed ? "\u25CF" : "\u25CF"}
+              </span>
+              <span className="flex-1">
+                {t.name}
+                {!t.passed && t.error && <span className="block text-muted-foreground">{t.error}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ScriptConsole({ entries }: { entries: { phase: string; line: string }[] }) {
+  if (entries.length === 0) return <p className="p-3 text-[13px] text-muted-foreground">No console output.</p>;
+  return (
+    <div className="p-3">
+      {entries.map((e, i) => (
+        <div key={i} className="flex gap-3 font-mono text-[12px]">
+          <span className="w-20 shrink-0 text-muted-foreground">{e.phase}</span>
+          <span className="whitespace-pre-wrap break-all">{e.line}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ---------- collection/environment variable views -------------------------------
 
-function CollectionVariables({
+function CollectionView({
   draft,
   rows,
   mutate,
   onVariablesChanged,
   onSave,
+  trusted,
+  onSetTrusted,
 }: {
   draft: { collectionId: string; json: V21Collection; dirty: boolean };
   rows: VarRow[];
   mutate: (fn: (json: V21Collection) => void) => void;
   onVariablesChanged: (scope: "collection" | "environment", scopeId: string) => void;
   onSave: () => Promise<boolean>;
+  trusted: boolean;
+  onSetTrusted: (collectionId: string, trusted: boolean) => Promise<void>;
 }) {
+  const [viewTab, setViewTab] = useState<"variables" | "prerequest" | "tests">("variables");
+  const [trustOpen, setTrustOpen] = useState(false);
   return (
     <div className="pt-2">
-      <div className="mb-2 flex items-center gap-2">
-        <h3 className="text-[13px] font-semibold">Variables — {draft.json.info?.name ?? "collection"}</h3>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h3 className="text-[13px] font-semibold">{draft.json.info?.name ?? "collection"}</h3>
         {draft.dirty && <Button size="sm" onClick={onSave}>Save collection</Button>}
-      </div>
-      <VariablesTable
-        rows={rows}
-        scope="collection"
-        scopeId={draft.collectionId}
-        onChanged={() => onVariablesChanged("collection", draft.collectionId)}
-      />
-      <div className="mt-3">
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1"
-          onClick={() =>
-            mutate((json) => {
-              json.variable ??= [];
-              json.variable.push({ key: "", value: "" });
-            })
-          }
-        >
-          <Plus className="size-3.5" /> Add variable
+        <Badge variant="outline" className={trusted ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : ""}>
+          {trusted ? "Trusted scripts" : "Untrusted scripts"}
+        </Badge>
+        <Button size="sm" variant="ghost" className="h-7" onClick={() => setTrustOpen(true)}>
+          Change…
         </Button>
       </div>
+      <Tabs value={viewTab} onValueChange={(v) => setViewTab(v as any)}>
+        <TabsList>
+          <TabsTrigger value="variables">Variables</TabsTrigger>
+          <TabsTrigger value="prerequest">Pre-request</TabsTrigger>
+          <TabsTrigger value="tests">Tests</TabsTrigger>
+        </TabsList>
+        <TabsContent value="variables">
+          <VariablesTable
+            rows={rows}
+            scope="collection"
+            scopeId={draft.collectionId}
+            onChanged={() => onVariablesChanged("collection", draft.collectionId)}
+          />
+          <div className="mt-3">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1"
+              onClick={() =>
+                mutate((json) => {
+                  json.variable ??= [];
+                  json.variable.push({ key: "", value: "" });
+                })
+              }
+            >
+              <Plus className="size-3.5" /> Add variable
+            </Button>
+          </div>
+        </TabsContent>
+        <TabsContent value="prerequest">
+          <ScriptEditor
+            code={getScriptExec(draft.json, "prerequest")}
+            onChange={(v) => mutate((json) => setScriptExec(json, "prerequest", v))}
+          />
+        </TabsContent>
+        <TabsContent value="tests">
+          <ScriptEditor
+            code={getScriptExec(draft.json, "test")}
+            onChange={(v) => mutate((json) => setScriptExec(json, "test", v))}
+          />
+        </TabsContent>
+      </Tabs>
+      <Dialog open={trustOpen} onOpenChange={setTrustOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Trusted scripts</DialogTitle>
+            <DialogDescription>
+              Trusted scripts may read secret values, change variables and secrets permanently, and send to any host.
+              Turn this on only for collections you wrote or have read.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-[13px]">
+            Collection: <span className="font-semibold">{draft.json.info?.name ?? draft.collectionId}</span>
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setTrustOpen(false)}>Cancel</Button>
+            <Button
+              variant={trusted ? "destructive" : "default"}
+              onClick={async () => {
+                setTrustOpen(false);
+                await onSetTrusted(draft.collectionId, !trusted);
+              }}
+            >
+              {trusted ? "Turn off trusted scripts" : "Turn on trusted scripts"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1746,6 +2023,81 @@ function EnvironmentVariables({
         onChanged={() => onVariablesChanged("environment", environmentId)}
       />
     </div>
+  );
+}
+
+// ---------- export dialog --------------------------------------------------------
+
+function ExportDialog({
+  open,
+  onOpenChange,
+  target,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  target: { kind: "collection" | "environment"; id: string } | null;
+}) {
+  const [collections, setCollections] = useState<CollectionMeta[]>([]);
+  const [environments, setEnvironments] = useState<EnvironmentMeta[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const state = await api<{ collections: CollectionMeta[]; environments: EnvironmentMeta[] }>("/api/state");
+      if (state) {
+        setCollections(state.collections);
+        setEnvironments(state.environments);
+      }
+    })();
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Export</DialogTitle>
+          <DialogDescription>
+            Download Postman v2.1 JSON. Environments export with secret values blank and type secret; no route ever returns a secret value.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-72 space-y-4 overflow-auto">
+          <div>
+            <h4 className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Collections</h4>
+            {collections.length === 0 ? (
+              <p className="text-[13px] text-muted-foreground">No collections.</p>
+            ) : (
+              collections.map((c) => (
+                <div key={c.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-accent">
+                  <span className="flex-1 truncate text-[13px]">{c.json?.info?.name ?? c.name}</span>
+                  <Button size="sm" variant="outline" asChild>
+                    <a href={`/api/export/collection/${c.id}`} download>Download</a>
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+          <div>
+            <h4 className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Environments</h4>
+            {environments.length === 0 ? (
+              <p className="text-[13px] text-muted-foreground">No environments.</p>
+            ) : (
+              environments.map((e) => (
+                <div key={e.id} className="flex items-center gap-2 rounded px-1 py-1 hover:bg-accent">
+                  <span className="flex-1 truncate text-[13px]">{e.name}</span>
+                  <Button size="sm" variant="outline" asChild>
+                    <a href={`/api/export/environment/${e.id}`} download>Download</a>
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1783,6 +2135,9 @@ function ImportDialog({
       if (!res.ok) {
         toast.error(data?.error?.message ?? `The import failed with status ${res.status}.`);
         return;
+      }
+      if (kind === "collection" && hasCollectionScripts(json)) {
+        toast.warning(`"${json?.info?.name ?? "collection"}" runs scripts on send. Review them before using real secrets.`);
       }
       for (const m of data.moved ?? []) {
         toast.success(`Moved into secrets: "${m.name}" (${m.where ?? m.scope})`);

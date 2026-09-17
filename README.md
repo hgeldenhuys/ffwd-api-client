@@ -65,6 +65,58 @@ are refused, redirects are re-checked hop by hop up to a small limit, and
 responses are capped in bytes and time. The policy exists so a stored
 collection cannot be turned into a tunnel into your network.
 
+## Scripts
+
+Collections, folders and requests can carry Postman v2.1 scripts: an `event`
+array with `listen: "prerequest"` or `"test"` and a `script.exec` list of
+lines. On every send they run on the server, in inheritance order
+(collection → folder(s) → request), inside a QuickJS WebAssembly sandbox: a
+fresh runtime per phase, a 64 MB memory cap, a 5 second wall-clock limit per
+phase (10 seconds per send), and no `fetch`, `require`, `process` or `Bun`
+inside. A sandbox crash kills a worker process, never the server, and the
+send answers `script_sandbox_crashed`.
+
+**The trust model.** Every collection carries a `x-ffwd-scripts-trusted`
+marker in its `info`. Collections you create in the app start **trusted**;
+imported collections start **untrusted**, and the UI warns you on import.
+Trusted scripts may read secret values, change variables and secrets
+permanently, and send to any host; every secret read or write is logged
+server-side (names only, never values). Turn this on only for collections you
+wrote or have read — the UI's switch says the same. Untrusted scripts:
+- `get` of a secret-typed name returns `undefined` (with a console note);
+- variable and secret writes apply to **this send only** and are reported in
+  the send response as `variablesChanged` with `persisted: false`;
+- the request's origin (scheme + host + port) cannot change — headers, path,
+  query and body may still be mutated.
+
+**The `pm` surface** mirrors Postman: `pm.variables` (local, this send),
+`pm.collectionVariables`, `pm.environment`, `pm.globals` (mapped to the
+collection scope — this app has no workspace scope), `pm.secrets.set/has`
+(writes the encrypted secret store; there is no `pm.secrets.get` — use the
+scope objects), `pm.request` (method, url object, headers, body; mutations
+apply to this send only), `pm.response` and `pm.response.to` in test scripts,
+`pm.test`, a chai-compatible `pm.expect` subset, `pm.info`,
+`pm.variables.replaceIn`, and `console.log/info/warn/error` (capped). `pm.crypto`
+offers `sha256`, `md5`, `hmacSha256`, `base64`, `randomUUID`; `require("crypto-js")`
+returns a shim with `SHA256`, `MD5`, `HmacSHA256` and the `enc` encoders;
+`require` of anything else throws. `btoa`/`atob` and a synchronous
+`setTimeout` shim exist. `postman.setNextRequest` and `pm.sendRequest` throw
+a "not supported in this version" error naming what to do instead. A `pm.test`
+returning a promise is recorded as failed ("async tests are not supported
+yet").
+
+**Secrets rule.** On the server a trusted script may `get` a secret's value
+(signing a request needs it). Everything the scripts produce on the way back
+to the browser — console lines, test names and messages, error messages —
+goes through the same hiding engine as every other output, plus any secret a
+script read or wrote. A script cannot write a secret's value into a plain
+variable: the write is refused with a named error.
+
+**What is not supported yet:** async tests, `pm.sendRequest` (scripts cannot
+send their own requests), `postman.setNextRequest` (no collection runner),
+iteration data, and folder-level script editing in the UI (folder scripts
+still run; edit them in the collection JSON).
+
 ## URL grammar
 
 `?c=<collectionId>&r=<request path, "/"-joined, URL-encoded>&e=<environmentId>&side=collections|envs|history&tab=params|headers|body|auth|vars` — all

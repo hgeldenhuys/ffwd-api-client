@@ -1,6 +1,6 @@
 {
   "name": "@ffwd/api-client-react",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The ffwd API client UI as an embeddable React 19 component: three-pane Postman-collection client with server-held secrets. Ships its own scoped stylesheet; the host sizes it.",
   "type": "module",
   "main": "./dist/index.js",
@@ -60,7 +60,8 @@
     "radix-ui": "^1.6.7",
     "react-resizable-panels": "^4",
     "sonner": "^1.7.2",
-    "tailwind-merge": "^2.6.0"
+    "tailwind-merge": "^2.6.0",
+    "@codemirror/lang-javascript": "^6.2.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",

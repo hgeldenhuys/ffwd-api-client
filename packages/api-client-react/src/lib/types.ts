@@ -17,14 +17,20 @@ export interface V21Auth {
   basic?: V21Param[];
   apikey?: V21Param[];
 }
+export interface V21Event {
+  listen?: "prerequest" | "test" | string;
+  script?: { type?: string; exec?: string[] };
+  disabled?: boolean;
+}
 export interface V21Item {
   name: string;
   request?: V21Request;
   auth?: V21Auth;
+  event?: V21Event[];
   item?: V21Item[];
 }
 export interface V21Collection {
-  info: { name: string; _postman_id?: string; schema?: string; description?: string };
+  info: { name: string; _postman_id?: string; schema?: string; description?: string; "x-ffwd-scripts-trusted"?: boolean };
   item: V21Item[];
   variable?: { key: string; value: string; type?: string; enabled?: boolean }[];
   auth?: V21Auth;
@@ -67,6 +73,20 @@ export interface HistoryMeta {
   sizeBytes: number | null;
 }
 
+export interface ScriptPhaseReport {
+  console: string[];
+  error?: { message: string; line?: number };
+  truncated?: true;
+}
+export interface ScriptTestsReport extends ScriptPhaseReport {
+  results: { name: string; passed: boolean; error?: string }[];
+}
+export interface ScriptsReport {
+  prerequest: ScriptPhaseReport;
+  tests: ScriptTestsReport;
+  variablesChanged: { scope: "collection" | "environment"; scopeId: string; name: string; secret: boolean; persisted: boolean; reason?: string }[];
+}
+
 export interface SendResult {
   status: number | null;
   statusText: string;
@@ -83,6 +103,7 @@ export interface SendResult {
   resolvedRequestHidden: { method: string; url: string; headers: Record<string, string>; body: string | null };
   warnings: string[];
   error?: { code: string; message: string; details?: unknown };
+  scripts?: ScriptsReport;
 }
 
 export const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
@@ -93,6 +114,9 @@ export function blankCollection(name: string): V21Collection {
       name,
       _postman_id: crypto.randomUUID(),
       schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+      // collections created in the app start with trusted scripts; imported
+      // ones start untrusted (the server sets the same marker on import)
+      "x-ffwd-scripts-trusted": true,
     },
     item: [],
     variable: [],

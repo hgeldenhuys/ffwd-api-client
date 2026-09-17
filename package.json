@@ -17,13 +17,16 @@
   "dependencies": {
     "@ffwd/api-client-react": "workspace:*",
     "@ffwd/api-client-server": "workspace:*",
+    "@jitl/quickjs-wasmfile-release-asyncify": "^0.32.0",
     "postman-collection": "5.3.1",
+    "quickjs-emscripten": "^0.32.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router": "^7.1.5",
     "sonner": "^1.7.2"
   },
   "devDependencies": {
+    "@codemirror/lang-javascript": "^6.2.5",
     "@react-router/dev": "^7.1.5",
     "@tailwindcss/vite": "^4.0.0",
     "@types/bun": "^1.2.1",

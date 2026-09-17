@@ -10,7 +10,8 @@ import type { AuthFn } from "./session";
 import { importCollection, importEnvironment } from "./import-export";
 import { type ProxyPolicyOptions } from "./proxy-policy";
 import { assertNotProductionOverride } from "./env";
-import { performSend } from "./sender";
+import { performSend, type SendOutput } from "./sender";
+import { collectionHasScripts, TRUST_MARKER } from "./scripts/run";
 import type { Scope, Store } from "./store";
 
 import { apiError } from "./api-error";
@@ -226,7 +227,12 @@ export function createApiClientHandler(opts: CreateApiClientHandlerOptions): (re
     if (body === null) return apiError("bad_json", "The request body must be JSON with a \"name\" field.");
     const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : "New collection";
     const j = body?.json ?? {
-      info: { name, _postman_id: crypto.randomUUID(), schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+      info: {
+        name,
+        _postman_id: crypto.randomUUID(),
+        schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        [TRUST_MARKER]: true,
+      },
       item: [],
       variable: [],
     };
@@ -342,11 +348,20 @@ export function createApiClientHandler(opts: CreateApiClientHandlerOptions): (re
       }
       const slug = slugify(doc.info?.name ?? "collection");
       const { json: cleaned, report, secrets } = importCollection(doc, slug);
+      cleaned.info ??= {};
+      cleaned.info[TRUST_MARKER] = false;
       const row = store.createCollection(doc.info?.name ?? "Imported collection", JSON.stringify(cleaned));
       for (const s of secrets) {
         await putSecret("collection", row.id, s.name, s.value);
       }
-      return json({ id: row.id, name: row.name, moved: report.movedSecrets, warnings: report.warnings }, 201);
+      return json({
+        id: row.id,
+        name: row.name,
+        moved: report.movedSecrets,
+        warnings: report.warnings,
+        runsScripts: collectionHasScripts(cleaned),
+        trusted: false,
+      }, 201);
     }
 
     if (kind === "environment") {
@@ -458,8 +473,22 @@ export function createApiClientHandler(opts: CreateApiClientHandlerOptions): (re
       size_bytes: result.sizeBytes,
     });
 
-    return json(result);
+    // Pre-request script failures and sandbox crashes are 4xx house errors.
+    const status = scriptFailureStatus(result);
+    return json(result, status);
   }
+}
+
+function scriptFailureStatus(result: SendOutput): number {
+  if (!result.error) return 200;
+  if (
+    result.error.code === "prerequest_failed" ||
+    result.error.code === "script_sandbox_crashed" ||
+    result.error.code === "script_origin_refused"
+  ) {
+    return 400;
+  }
+  return 200;
 }
 
 // ---- shared helpers -------------------------------------------------------------

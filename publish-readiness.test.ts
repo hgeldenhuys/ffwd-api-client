@@ -104,7 +104,7 @@ describe("publish readiness", () => {
     for (const dir of PACKAGE_DIRS) {
       const p = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
       expect(p.name.startsWith("@ffwd/")).toBe(true);
-      expect(p.version).toBe("0.1.0");
+      expect(p.version).toBe("0.2.0");
       expect(p.license).toBe("MIT");
       expect(p.publishConfig).toEqual({ access: "public" });
       expect(p.publishConfig.registry).toBeUndefined();

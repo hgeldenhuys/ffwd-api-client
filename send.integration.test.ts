@@ -108,6 +108,104 @@ describe("send integration (allow-private, echo target)", () => {
   });
 });
 
+describe("build 7 scripts: login-style flow against the app's own echo", () => {
+  let collectionId: string;
+
+  test("request A stores the echoed access_token as a secret; request B sends it and the raw token appears nowhere", async () => {
+    // import a collection with two requests and a test script on A
+    const importRes = await apiFetch(server.port, cookie, "/api/ffwd/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: "collection",
+        json: {
+          info: { name: "login-flow" },
+          item: [
+            {
+              name: "Login",
+              request: {
+                method: "POST",
+                url: { raw: `http://127.0.0.1:${server.port}/api/ffwd/_echo` },
+                header: [{ key: "x-echo-key", value: "test-access-key-0123456789" }],
+                body: { mode: "raw", raw: '{"access_token":"tok-live-99118822"}' },
+              },
+              event: [
+                {
+                  listen: "test",
+                  script: {
+                    type: "text/javascript",
+                    exec: [
+                      'pm.test("echo 200", () => pm.response.to.have.status(200));',
+                      'pm.secrets.set("token", JSON.parse(pm.response.json().body).access_token);',
+                    ],
+                  },
+                },
+              ],
+            },
+            {
+              name: "Whoami",
+              request: {
+                method: "GET",
+                url: { raw: `http://127.0.0.1:${server.port}/api/ffwd/_echo` },
+                header: [
+                  { key: "x-echo-key", value: "test-access-key-0123456789" },
+                  { key: "Authorization", value: "Bearer {{token}}" },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const imported = await importRes.json();
+    expect(importRes.status).toBe(201);
+    // imported collections start untrusted — the flow below needs a trusted
+    // collection, which is exactly the dialog in the UI
+    expect(imported.trusted).toBe(false);
+    collectionId = imported.id;
+
+    // the trust switch (R1): flipping is a named action, not a bare toggle
+    const state = await (await apiFetch(server.port, cookie, "/api/ffwd/state")).json();
+    const col = state.collections.find((c: any) => c.id === collectionId);
+    col.json.info["x-ffwd-scripts-trusted"] = true;
+    await apiFetch(server.port, cookie, `/api/ffwd/collections/${collectionId}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "login-flow", json: col.json }),
+    });
+
+    // request A: the test stores the echoed token as a secret
+    const a = await (await apiFetch(server.port, cookie, "/api/ffwd/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ collectionId, itemPath: "Login" }),
+    })).json();
+    expect(a.error).toBeUndefined();
+    if (!a.scripts.tests.results.length) console.log("LOGIN A TESTS:", JSON.stringify(a.scripts));
+    expect(a.scripts.variablesChanged).toEqual([
+      { scope: "collection", scopeId: collectionId, name: "token", secret: true, persisted: true },
+    ]);
+
+    // request B sends Bearer {{token}}; the echoed header comes back hidden
+    const b = await (await apiFetch(server.port, cookie, "/api/ffwd/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ collectionId, itemPath: "Whoami" }),
+    })).json();
+    expect(b.error).toBeUndefined();
+    expect(JSON.parse(b.body).headers["authorization"]).toBe(`Bearer ••••••{{token}}`);
+
+    // the raw token appears nowhere in either response payload
+    expect(JSON.stringify(a)).not.toContain("tok-live-99118822");
+    expect(JSON.stringify(b)).not.toContain("tok-live-99118822");
+
+    // the secret really is in the store (metadata only)
+    const secs = await (await apiFetch(server.port, cookie, `/api/ffwd/secrets?scope=collection&scopeId=${collectionId}`)).json();
+    expect(secs.map((s: any) => s.name)).toContain("token");
+    expect(JSON.stringify(secs)).not.toContain("tok-live-99118822");
+  });
+});
+
 describe("proxy policy on the live send path", () => {
   test("without the override, a loopback target is denied", async () => {
     const strict = await startServer({ allowPrivate: false });

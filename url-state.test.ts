@@ -96,6 +96,18 @@ describe("url grammar round trip", () => {
     ).toBe("Auth'd/Get me");
   });
 
+  test("the two new script tab values round-trip (build 7)", () => {
+    for (const tab of ["prerequest", "tests"] as const) {
+      const params = serializeUrlState({ collectionId: "c1", itemPath: "a", tab });
+      expect(params.get("tab")).toBe(tab);
+      const parsed = parseUrlState(new URLSearchParams(params));
+      expect(parsed.tab).toBe(tab);
+    }
+    // unknown tab values still degrade
+    const junk = parseUrlState(new URLSearchParams("tab=script"));
+    expect(junk.tab).toBeUndefined();
+  });
+
   test("empty params parse to an empty selection; unknown side/tab dropped", () => {
     const parsed = parseUrlState(new URLSearchParams(""));
     expect(parsed.collectionId).toBeUndefined();

@@ -33,7 +33,7 @@
  */
 
 export type SidebarTab = "collections" | "envs" | "history";
-export type EditorTab = "params" | "headers" | "body" | "auth" | "vars";
+export type EditorTab = "params" | "headers" | "body" | "auth" | "vars" | "prerequest" | "tests";
 
 export interface UrlSelection {
   collectionId?: string;
@@ -52,7 +52,7 @@ export interface UrlStateAdapter {
 }
 
 const SIDEBAR_VALUES = new Set(["collections", "envs", "history"]);
-const TAB_VALUES = new Set(["params", "headers", "body", "auth", "vars"]);
+const TAB_VALUES = new Set(["params", "headers", "body", "auth", "vars", "prerequest", "tests"]);
 
 /**
  * Escape an item path for the `r` parameter: each segment has only `%` and
